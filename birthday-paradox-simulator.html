@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Birthday Paradox Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #f5f3ef;
+    --surface: #ffffff;
+    --surface2: #edeae4;
+    --border: rgba(0,0,0,0.1);
+    --border2: rgba(0,0,0,0.18);
+    --text: #1a1814;
+    --text2: #6b6660;
+    --text3: #9e9890;
+    --accent: #2a5caa;
+    --accent2: #1a3d74;
+    --teal: #1a7a6e;
+    --danger: #c43b3b;
+    --danger-bg: #fdf0f0;
+    --danger-border: rgba(196,59,59,0.25);
+    --amber: #b06a10;
+    --green: #2d7a4f;
+    --mono: 'DM Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --radius: 10px;
+    --radius-lg: 16px;
+  }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 24px 20px 48px;
+  }
+
+  .app { max-width: 920px; margin: 0 auto; }
+
+  /* Header */
+  .header { margin-bottom: 20px; padding-bottom: 18px; border-bottom: 1px solid var(--border); }
+  .eyebrow { font-family: var(--mono); font-size: 11px; color: var(--text3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+  .title { font-size: 26px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; line-height: 1.1; }
+  .subtitle { font-size: 13px; color: var(--text2); margin-top: 5px; line-height: 1.5; }
+
+  /* Metrics */
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px; }
+  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 11px 13px; }
+  .metric-label { font-family: var(--mono); font-size: 9.5px; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 5px; }
+  .metric-value { font-size: 22px; font-weight: 600; color: var(--text); letter-spacing: -0.02em; font-family: var(--mono); }
+  .metric-value.c-danger { color: var(--danger); }
+  .metric-value.c-amber  { color: var(--amber); }
+  .metric-value.c-accent { color: var(--accent); }
+
+  /* Match banner */
+  .match-banner {
+    background: var(--danger-bg); border: 1px solid var(--danger-border);
+    border-radius: var(--radius); padding: 11px 15px; margin-bottom: 14px;
+    display: none; align-items: center; gap: 12px;
+  }
+  .match-banner.visible { display: flex; animation: slideDown 0.3s ease; }
+  @keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  .match-text { font-size: 14px; color: var(--danger); font-weight: 600; }
+  .match-sub  { font-size: 11px; color: var(--danger); opacity: 0.75; margin-top: 2px; }
+
+  /* ── HORIZONTAL CALENDAR ──
+     Grid: 1 label col (month names) + 31 day columns
+     Rows: 1 header row (day numbers) + 12 month rows              */
+  .cal-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px 18px;
+    margin-bottom: 14px; overflow-x: auto;
+  }
+  .cal-panel-label { font-family: var(--mono); font-size: 10px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+
+  .cal-table {
+    display: grid;
+    grid-template-columns: 26px repeat(31, 1fr);
+    grid-template-rows: auto repeat(12, 1fr);
+    gap: 2px;
+    min-width: 540px;
+  }
+  .cal-corner    { /* empty top-left */ }
+  .cal-day-num   { font-family: var(--mono); font-size: 8px; color: var(--text3); text-align: center; padding-bottom: 3px; }
+  .cal-month-lbl { font-family: var(--mono); font-size: 8px; color: var(--text3); display: flex; align-items: center; font-weight: 500; letter-spacing: 0.03em; }
+
+  .day-cell {
+    aspect-ratio: 1; border-radius: 2px;
+    background: var(--bg); border: 0.5px solid var(--border);
+    position: relative; transition: background 0.15s, border-color 0.15s;
+  }
+  .day-cell.ghost   { background: transparent; border-color: transparent; pointer-events: none; }
+  .day-cell.has-bd  { background: var(--accent); border-color: var(--accent); }
+  .day-cell.dup     { background: var(--danger) !important; border-color: var(--danger) !important; }
+  .day-cell.dup-anim { animation: popCell 0.5s cubic-bezier(0.36,0.07,0.19,0.97); }
+  @keyframes popCell {
+    0%   { transform: scale(1); }
+    30%  { transform: scale(2.1); box-shadow: 0 0 0 4px rgba(196,59,59,0.3); }
+    70%  { transform: scale(1.5); }
+    100% { transform: scale(1); }
+  }
+  .dot { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); width: 3px; height: 3px; border-radius: 50%; background: white; }
+  .day-cell.has-bd .dot { display: block; }
+
+  /* ── TWO PROBABILITY CARDS ── */
+  .prob-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }
+  .prob-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+  .prob-card-label { font-family: var(--mono); font-size: 9.5px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px; }
+  .prob-big { font-family: var(--mono); font-size: 42px; font-weight: 500; letter-spacing: -0.03em; line-height: 1; margin-bottom: 10px; transition: color 0.3s; }
+  .prob-track { height: 7px; background: var(--surface2); border-radius: 99px; overflow: hidden; margin-bottom: 8px; }
+  .prob-fill  { height: 100%; border-radius: 99px; transition: width 0.4s cubic-bezier(0.4,0,0.2,1), background 0.4s; }
+  .prob-desc  { font-size: 11px; color: var(--text3); line-height: 1.6; }
+  .prob-desc strong { color: var(--text2); }
+
+
+
+  /* Legend */
+  .legend-row {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 10px 14px; display: flex; gap: 20px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .lg-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text2); }
+  .lg-swatch { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+
+  /* Controls + log */
+  .bottom-row { display: grid; grid-template-columns: 1fr 210px; gap: 12px; margin-bottom: 14px; }
+  .ctrl-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+  .ctrl-title { font-family: var(--mono); font-size: 9.5px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+  .btn-group  { display: flex; gap: 8px; flex-wrap: wrap; }
+
+  button {
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    border-radius: var(--radius); padding: 8px 16px; cursor: pointer;
+    border: 1px solid transparent; transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-primary:active { transform: scale(0.97); }
+  .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+  .btn-ghost   { background: transparent; color: var(--text); border-color: var(--border2); }
+  .btn-ghost:hover { background: var(--surface2); }
+  .btn-danger  { background: var(--danger); color: white; border-color: var(--danger); }
+  .btn-danger:hover { background: #a32d2d; }
+  .btn-danger:active { transform: scale(0.97); }
+  .btn-danger:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+  /* Log */
+  .log-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px; }
+  .log-scroll { max-height: 160px; overflow-y: auto; }
+  .log-scroll::-webkit-scrollbar { width: 4px; }
+  .log-scroll::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 99px; }
+  .log-entry { font-family: var(--mono); font-size: 10px; color: var(--text2); padding: 3px 0; border-bottom: 0.5px solid var(--border); line-height: 1.5; }
+  .log-entry:last-child { border-bottom: none; }
+  .log-entry.match-entry { color: var(--danger); font-weight: 500; }
+  .log-empty { font-family: var(--mono); font-size: 10px; color: var(--text3); font-style: italic; }
+
+  /* Histogram */
+  .hist-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 16px; }
+  .hist-title { font-family: var(--mono); font-size: 9.5px; color: var(--text3); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 4px; }
+  .hist-meta  { font-size: 12px; color: var(--text2); margin-bottom: 12px; min-height: 18px; }
+  .chart-wrap { position: relative; height: 165px; margin-bottom: 14px; }
+  .compare-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .cmp-card  { background: var(--surface2); border-radius: var(--radius); padding: 10px 12px; }
+  .cmp-label { font-family: var(--mono); font-size: 9px; color: var(--text3); letter-spacing: 0.06em; text-transform: uppercase; margin-bottom: 4px; }
+  .cmp-val   { font-family: var(--mono); font-size: 17px; font-weight: 500; }
+  .cmp-val.c-accent { color: var(--accent); }
+  .cmp-val.c-green  { color: var(--green); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+  @media (max-width: 640px) {
+    .metrics { grid-template-columns: repeat(2,1fr); }
+    .prob-row { grid-template-columns: 1fr; }
+    .bottom-row { grid-template-columns: 1fr; }
+    .compare-grid { grid-template-columns: repeat(2,1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1 class="sr-only">Birthday Paradox Live Simulator</h1>
+
+  <div class="header">
+    <div class="eyebrow">Probability · Interactive Demo</div>
+    <div class="title">Birthday Paradox</div>
+    <div class="subtitle">Students enter one by one. Watch how quickly two share a birthday — far sooner than intuition suggests.</div>
+  </div>
+
+  <!-- Metrics -->
+  <div class="metrics">
+    <div class="metric">
+      <div class="metric-label">In the room</div>
+      <div class="metric-value" id="m-count">0</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">First match at</div>
+      <div class="metric-value c-danger" id="m-match">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Sim average</div>
+      <div class="metric-value c-amber" id="m-simavg">—</div>
+    </div>
+    <div class="metric">
+      <div class="metric-label">Days occupied</div>
+      <div class="metric-value c-accent" id="m-days">0</div>
+    </div>
+  </div>
+
+  <!-- Match banner -->
+  <div class="match-banner" id="match-banner">
+    <span style="font-size:20px;flex-shrink:0">🎉</span>
+    <div>
+      <div class="match-text" id="match-text">Match found!</div>
+      <div class="match-sub"  id="match-sub"></div>
+    </div>
+  </div>
+
+  <!-- ── HORIZONTAL CALENDAR ── -->
+  <div class="cal-panel">
+    <div class="cal-panel-label">Calendar — rows = months · columns = day of month (1–31)</div>
+    <div class="cal-table" id="cal-table"></div>
+  </div>
+
+  <!-- ── TWO PROBABILITY PANELS ── -->
+  <div class="prob-row">
+
+    <!-- Card 1: P(next student causes a match) -->
+    <div class="prob-card">
+      <div class="prob-card-label">Probability of a match on the next student</div>
+      <div class="prob-big" id="prob-next" style="color:var(--accent)">0.0%</div>
+      <div class="prob-track"><div class="prob-fill" id="fill-next" style="width:0%;background:var(--accent)"></div></div>
+      <div class="prob-desc">
+        With <strong id="dn-n">0</strong> students already in the room, the next person
+        has a <strong id="dn-p">0.0%</strong> chance of sharing a birthday with someone already present
+        (<em>n</em> / 365).
+      </div>
+    </div>
+
+    <!-- Card 2: P(at least one match within n students) — tracks room count -->
+    <div class="prob-card">
+      <div class="prob-card-label">Probability of at least one match within <em id="n-label">0</em> students</div>
+      <div class="prob-big" id="prob-cum" style="color:var(--teal)">0.0%</div>
+      <div class="prob-track"><div class="prob-fill" id="fill-cum" style="width:0%;background:var(--teal)"></div></div>
+      <div class="prob-desc">
+        In a group of <strong id="dc-n">0</strong> randomly chosen people, there is a
+        <strong id="dc-p">0.0%</strong> chance at least two share a birthday.
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Legend -->
+  <div class="legend-row">
+    <div class="lg-item"><div class="lg-swatch" style="background:var(--accent)"></div>Birthday present</div>
+    <div class="lg-item"><div class="lg-swatch" style="background:var(--danger)"></div>Duplicate — match!</div>
+    <div class="lg-item"><div class="lg-swatch" style="background:var(--bg);border:0.5px solid var(--border2)"></div>Empty day</div>
+    <div class="lg-item" style="color:var(--text3)"><div class="lg-swatch" style="background:transparent"></div>Day doesn't exist (e.g. Feb 30)</div>
+  </div>
+
+  <!-- Controls + Log -->
+  <div class="bottom-row">
+    <div class="ctrl-panel">
+      <div class="ctrl-title">Add students &amp; simulate</div>
+      <div class="btn-group">
+        <button class="btn-primary" id="btn-add" onclick="addStudent()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
+          Add one student
+        </button>
+        <button class="btn-ghost" onclick="resetSim()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.95"/></svg>
+          Reset
+        </button>
+        <button class="btn-danger" id="btn-sim" onclick="run1000()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Run 1,000 simulations
+        </button>
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="ctrl-title">Student log</div>
+      <div class="log-scroll" id="log-list">
+        <div class="log-empty">Waiting for students…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Histogram -->
+  <div class="hist-panel">
+    <div class="hist-title">First-match distribution — 1,000 simulations</div>
+    <div class="hist-meta" id="hist-meta">Run 1,000 simulations to see where matches tend to occur.</div>
+    <div class="chart-wrap">
+      <canvas id="histChart" role="img" aria-label="Histogram of first match sizes across 1000 simulations"></canvas>
+    </div>
+    <div class="compare-grid">
+      <div class="cmp-card">
+        <div class="cmp-label">Simulation average</div>
+        <div class="cmp-val c-accent" id="cmp-avg">—</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-label">Median match</div>
+        <div class="cmp-val c-accent" id="cmp-med">—</div>
+      </div>
+      <div class="cmp-card">
+        <div class="cmp-label">50% chance at</div>
+        <div class="cmp-val c-green">23 students</div>
+      </div>
+    </div>
+  </div>
+</div><!-- /app -->
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+  const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTHS_FULL  = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  // Feb = 29 to include Feb 29 (leap day) as a valid birthday
+  const DAYS_IN_MONTH = [31, 28, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30];
+
+  let cells    = [];   // indexed by dayIndex(month, day)
+  let students = [];
+  let matchAt  = null;
+  let histChart = null;
+
+  // ── Build horizontal calendar ──────────────────────────────────────
+  function buildCalendar() {
+    const table = document.getElementById('cal-table');
+    table.innerHTML = '';
+    // Reset cell store
+    cells = [];
+    for (let i = 0; i < 366; i++) cells.push({ el: null, count: 0 });
+
+    // Top-left corner
+    table.appendChild(makeDiv('cal-corner'));
+
+    // Day-number header: 1 – 31
+    for (let d = 1; d <= 31; d++) {
+      const h = makeDiv('cal-day-num');
+      h.textContent = d;
+      table.appendChild(h);
+    }
+
+    // 12 month rows
+    DAYS_IN_MONTH.forEach((days, mi) => {
+      // Month label
+      const lbl = makeDiv('cal-month-lbl');
+      lbl.textContent = MONTHS_SHORT[mi];
+      table.appendChild(lbl);
+
+      for (let col = 1; col <= 31; col++) {
+        const cell = makeDiv('day-cell');
+        if (col > days) {
+          cell.classList.add('ghost');
+        } else {
+          cell.title = `${MONTHS_FULL[mi]} ${col}`;
+          const dot = makeDiv('dot');
+          cell.appendChild(dot);
+          const idx = dayIndex(mi, col);
+          cells[idx].el = cell;
+        }
+        table.appendChild(cell);
+      }
+    });
+  }
+
+  function makeDiv(cls) {
+    const d = document.createElement('div');
+    if (cls) d.className = cls;
+    return d;
+  }
+
+  function dayIndex(month, day) {
+    let idx = 0;
+    for (let m = 0; m < month; m++) idx += DAYS_IN_MONTH[m];
+    return idx + (day - 1);
+  }
+
+  function randomBirthday() {
+    const month = Math.floor(Math.random() * 12);
+    const day   = Math.floor(Math.random() * DAYS_IN_MONTH[month]) + 1;
+    return { month, day };
+  }
+
+  // ── Probability formulas ───────────────────────────────────────────
+  // P(next student matches someone among n already present) = n / 365
+  function nextStudentProb(n) {
+    return (n / 365) * 100;
+  }
+
+  // P(at least one match in a group of n) = 1 − ∏ (365−i)/365
+  function cumulativeProb(n) {
+    if (n <= 1) return 0;
+    let p = 1;
+    for (let i = 0; i < n; i++) p *= (365 - i) / 365;
+    return (1 - p) * 100;
+  }
+
+  function dynamicColor(pct, baseVar) {
+    if (pct > 90) return 'var(--danger)';
+    if (pct > 60) return 'var(--amber)';
+    return baseVar;
+  }
+
+  // ── Refresh probability displays ──────────────────────────────────
+  function refreshProbCards(nInRoom) {
+    // Card 1: next-student probability
+    const pNext    = nextStudentProb(nInRoom);
+    const pNextStr = pNext.toFixed(1) + '%';
+    const col1 = dynamicColor(pNext, 'var(--accent)');
+    document.getElementById('prob-next').textContent  = pNextStr;
+    document.getElementById('prob-next').style.color  = col1;
+    document.getElementById('fill-next').style.width  = Math.min(pNext, 100) + '%';
+    document.getElementById('fill-next').style.background = col1;
+    document.getElementById('dn-n').textContent = nInRoom;
+    document.getElementById('dn-p').textContent = pNextStr;
+
+    // Card 2: cumulative (tracks current room count)
+    refreshCumCard(nInRoom);
+  }
+
+  function refreshCumCard(n) {
+    const pCum = cumulativeProb(n);
+    const pStr = pCum.toFixed(1) + '%';
+    const col2 = dynamicColor(pCum, 'var(--teal)');
+    document.getElementById('n-label').textContent   = n;
+    document.getElementById('prob-cum').textContent  = pStr;
+    document.getElementById('prob-cum').style.color  = col2;
+    document.getElementById('fill-cum').style.width  = Math.min(pCum, 100) + '%';
+    document.getElementById('fill-cum').style.background = col2;
+    document.getElementById('dc-n').textContent = n;
+    document.getElementById('dc-p').textContent = pStr;
+  }
+
+  // ── Add one student ────────────────────────────────────────────────
+  function addStudent() {
+    if (matchAt !== null) return;
+
+    const bd  = randomBirthday();
+    const idx = dayIndex(bd.month, bd.day);
+    const cell = cells[idx];
+    cell.count++;
+
+    const num     = students.length + 1;
+    const isMatch = cell.count > 1;
+    students.push({ ...bd, idx, num, isMatch });
+
+    cell.el.classList.add('has-bd');
+    if (isMatch) {
+      cell.el.classList.remove('has-bd');
+      cell.el.classList.add('dup');
+      void cell.el.offsetWidth;          // force reflow for animation restart
+      cell.el.classList.add('dup-anim');
+      matchAt = num;
+      document.getElementById('btn-add').disabled = true;
+
+      const banner = document.getElementById('match-banner');
+      banner.classList.add('visible');
+      const prev = students.findIndex(s => s.idx === idx && s.num !== num) + 1;
+      document.getElementById('match-text').textContent =
+        `Students #${prev} and #${num} both have ${MONTHS_FULL[bd.month]} ${bd.day}!`;
+      document.getElementById('match-sub').textContent =
+        `It only took ${num} students — far fewer than most people guess.`;
+      document.getElementById('m-match').textContent = num;
+    }
+
+    appendLog(bd, num, isMatch);
+
+    const occupied = cells.filter(c => c.el && c.count > 0).length;
+    document.getElementById('m-count').textContent = num;
+    document.getElementById('m-days').textContent  = occupied;
+    refreshProbCards(num);
+  }
+
+  function appendLog(bd, num, isMatch) {
+    const list  = document.getElementById('log-list');
+    const empty = list.querySelector('.log-empty');
+    if (empty) empty.remove();
+    const entry = makeDiv('log-entry' + (isMatch ? ' match-entry' : ''));
+    entry.textContent = isMatch
+      ? `#${num}  ${MONTHS_FULL[bd.month]} ${bd.day}  ↳ MATCH`
+      : `#${num}  ${MONTHS_FULL[bd.month]} ${bd.day}`;
+    list.insertBefore(entry, list.firstChild);
+  }
+
+  // ── Reset ──────────────────────────────────────────────────────────
+  function resetSim() {
+    students = [];
+    matchAt  = null;
+    document.getElementById('btn-add').disabled = false;
+    document.getElementById('match-banner').classList.remove('visible');
+    document.getElementById('m-count').textContent = '0';
+    document.getElementById('m-match').textContent = '—';
+    document.getElementById('m-days').textContent  = '0';
+    document.getElementById('log-list').innerHTML  = '<div class="log-empty">Waiting for students…</div>';
+    buildCalendar();
+    refreshProbCards(0);
+  }
+
+  // ── Run 1 000 simulations ─────────────────────────────────────────
+  function simulateOnce() {
+    const seen = new Set();
+    for (let i = 1; i <= 100; i++) {
+      const m   = Math.floor(Math.random() * 12);
+      const d   = Math.floor(Math.random() * DAYS_IN_MONTH[m]);
+      const key = m * 32 + d;
+      if (seen.has(key)) return i;
+      seen.add(key);
+    }
+    return 100;
+  }
+
+  function run1000() {
+    const btn = document.getElementById('btn-sim');
+    btn.disabled = true;
+    btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg> Running…`;
+
+    setTimeout(() => {
+      const results = [];
+      for (let t = 0; t < 1000; t++) results.push(simulateOnce());
+
+      const avg    = results.reduce((a, b) => a + b, 0) / results.length;
+      const sorted = [...results].sort((a, b) => a - b);
+      const med    = sorted[500];
+
+      document.getElementById('m-simavg').textContent = avg.toFixed(1);
+      document.getElementById('cmp-avg').textContent  = avg.toFixed(1) + ' students';
+      document.getElementById('cmp-med').textContent  = med + ' students';
+      document.getElementById('hist-meta').textContent =
+        `1,000 simulations — average first match at ${avg.toFixed(1)} students, median ${med}.`;
+
+      const freq = {};
+      results.forEach(r => { freq[r] = (freq[r] || 0) + 1; });
+      const keys   = Object.keys(freq).map(Number).sort((a, b) => a - b);
+      const avgKey = Math.round(avg);
+      const bg     = keys.map(k => k === avgKey ? '#2a5caa' : 'rgba(42,92,170,0.35)');
+
+      if (histChart) histChart.destroy();
+      histChart = new Chart(document.getElementById('histChart'), {
+        type: 'bar',
+        data: {
+          labels: keys,
+          datasets: [{ label: 'Simulations', data: keys.map(k => freq[k]), backgroundColor: bg, borderWidth: 0, borderRadius: 3 }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: '#1a1814', titleColor: '#f5f3ef', bodyColor: '#9e9890', padding: 10,
+              callbacks: {
+                title: ctx => `Match at ${ctx[0].label} students`,
+                label: ctx => `${ctx.raw} of 1,000 (${(ctx.raw / 10).toFixed(1)}%)`
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { font: { family: "'DM Mono',monospace", size: 10 }, color: '#9e9890', maxTicksLimit: 14 }, grid: { display: false }, border: { color: 'rgba(0,0,0,0.1)' } },
+            y: { ticks: { font: { family: "'DM Mono',monospace", size: 10 }, color: '#9e9890' }, grid: { color: 'rgba(0,0,0,0.06)' }, border: { display: false } }
+          }
+        }
+      });
+
+      btn.disabled = false;
+      btn.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg> Run 1,000 simulations`;
+    }, 50);
+  }
+
+  // ── Init ──────────────────────────────────────────────────────────
+  buildCalendar();
+  refreshProbCards(0);
+  refreshCumCard(0);
+</script>
+</body>
+</html>
